@@ -1,434 +1,195 @@
 /*
- * jQuery store - Plugin for persistent data storage using localStorage, userData (and window.name)
- * 
- * Authors: Rodney Rehm
- * Web: http://medialize.github.com/jQuery-store/
- * 
+ * jQuery store - Plugin for persistent, cached data storage using localStorage, userData,
+ * or cookies
+ *
+ * Authors: Ryan Kaldari, Rodney Rehm
+ * Based on original plug-in at http://medialize.github.com/jQuery-store/. Added cookie
+ * fall-back and caching. Removed window storage and serialization. Input should be
+ * properly serialized before being passed to set().
+ *
  * Licensed under
  *   MIT License http://www.opensource.org/licenses/mit-license
  *   GPL v3 http://opensource.org/licenses/GPL-3.0
  *
  */
 
-/**********************************************************************************
+/************************************************************************************
  * INITIALIZE EXAMPLES:
- **********************************************************************************
- * 	// automatically detect best suited storage driver and use default serializers
- *	$.storage = new $.store();
- *	// optionally initialize with specific driver and or serializers
- *	$.storage = new $.store( [driver] [, serializers] );
- *		driver		can be the key (e.g. "windowName") or the driver-object itself
- *		serializers	can be a list of named serializers like $.store.serializers
- **********************************************************************************
+ ************************************************************************************
+ *  // automatically detect best suited storage driver
+ *  $.storage = new $.store();
+ *  // optionally initialize with specific driver
+ *  $.storage = new $.store( [driver] );
+ *      driver      key for storage method ("localStorage", "userData", or "cookies")
+ ************************************************************************************
  * USAGE EXAMPLES:
- **********************************************************************************
- *	$.storage.get( key );			// retrieves a value
- *	$.storage.set( key, value );	// saves a value
- *	$.storage.del( key );			// deletes a value
- *	$.storage.flush();				// deletes aall values
- **********************************************************************************
+ ************************************************************************************
+ *  $.storage.get( key );           // retrieves a value
+ *  $.storage.set( key, value );    // saves a value
+ *  $.storage.remove( key );        // deletes a value
+ *  $.storage.driverInUse();        // states which driver is being used
+ ************************************************************************************
  */
+( function( $ ) {
 
-(function($,undefined){
+$.store = function( driver ) {
+	var self = this;
 
-/**********************************************************************************
- * $.store base and convinience accessor
- **********************************************************************************/
-
-$.store = function( driver, serializers )
-{
-	var that = this;
-	
-	if( typeof driver == 'string' )
-	{
-		if( $.store.drivers[ driver ] )
-			this.driver = $.store.drivers[ driver ];
-		else
-			throw new Error( 'Unknown driver '+ driver );
-	}
-	else if( typeof driver == 'object' )
-	{
-		var invalidAPI = !$.isFunction( driver.init )
-			|| !$.isFunction( driver.get )
-			|| !$.isFunction( driver.set )
-			|| !$.isFunction( driver.del )
-			|| !$.isFunction( driver.flush );
-			
-		if( invalidAPI )
-			throw new Error( 'The specified driver does not fulfill the API requirements' );
-		
-		this.driver = driver;
-	}
-	else
-	{
+	this.cache = {};
+	if ( driver ) {
+		if ( $.store.drivers[driver] ) {
+			this.driver = $.store.drivers[driver];
+		} else {
+			throw new Error( 'Unknown driver ' + driver );
+		}
+	} else {
 		// detect and initialize storage driver
-		$.each( $.store.drivers, function()
-		{
+		$.each( $.store.fallback, function( index, driver ) {
 			// skip unavailable drivers
-			if( !$.isFunction( this.available ) || !this.available() )
-				return true; // continue;
-			
-			that.driver = this;
-			if( that.driver.init() === false )
-			{
-				that.driver = null;
+			if ( !$.store.drivers[driver].available() ) {
 				return true; // continue;
 			}
-			
+			self.driver = $.store.drivers[driver];
+			if ( self.driver.init() === false ) {
+				self.driver = null;
+				return true; // continue;
+			}
 			return false; // break;
-		});
+		} );
 	}
-	
-	// use default serializers if not told otherwise
-	if( !serializers )
-		serializers = $.store.serializers;
-	
-	// intialize serializers
-	this.serializers = {};
-	$.each( serializers, function( key, serializer )
-	{
-		// skip invalid processors
-		if( !$.isFunction( this.init ) )
-			return true; // continue;
-		
-		that.serializers[ key ] = this;
-		that.serializers[ key ].init( that.encoders, that.decoders );
-	});
 };
 
-
-/**********************************************************************************
- * $.store API
- **********************************************************************************/
-
 $.extend( $.store.prototype, {
-	get: function( key )
-	{
-		var value = this.driver.get( key );
-		return this.driver.encodes ? value : this.unserialize( value );
+	get: function( key ) {
+		if ( key in this.cache ) {
+			return this.cache.key;
+		} else {
+			return this.driver.get( key );
+		}
 	},
-	set: function( key, value )
-	{
-		this.driver.set( key, this.driver.encodes ? value : this.serialize( value ) );
+	set: function( key, value ) {
+		this.cache.key = value;
+		this.driver.set( key, value );
 	},
-	del: function( key )
-	{
-		this.driver.del( key );
+	remove: function( key ) {
+		delete this.cache.key;
+		this.driver.remove( key );
 	},
-	flush: function()
-	{
-		this.driver.flush();
-	},
-	driver : undefined,
-	encoders : [],
-	decoders : [],
-	serialize: function( value )
-	{
-		var that = this;
-		
-		$.each( this.encoders, function()
-		{
-			var serializer = that.serializers[ this + "" ];
-			if( !serializer || !serializer.encode )
-				return true; // continue;
-			try
-			{
-				value = serializer.encode( value );
-			}
-			catch( e ){}
-		});
-
-		return value;
-	},
-	unserialize: function( value )
-	{
-		var that = this;
-		if( !value )
-			return value;
-		
-		$.each( this.decoders, function()
-		{
-			var serializer = that.serializers[ this + "" ];
-			if( !serializer || !serializer.decode )
-				return true; // continue;
-
-			value = serializer.decode( value );
-		});
-
-		return value;
+	driverInUse: function() {
+		return this.driver.ident;
 	}
-});
+} );
 
-
-/**********************************************************************************
- * $.store drivers
- **********************************************************************************/
+// Define the preferred fall-back order. Try localStorage first, then userData, then cookies.
+$.store.fallback = [ 'localStorage', 'userData', 'cookies' ];
 
 $.store.drivers = {
 	// Firefox 3.5, Safari 4.0, Chrome 5, Opera 10.5, IE8
 	'localStorage': {
 		// see https://developer.mozilla.org/en/dom/storage#localStorage
-		ident: "$.store.drivers.localStorage",
-		scope: 'browser',
-		available: function()
-		{
-			try
-			{
-				// Firefox won't allow localStorage if cookies are disabled
-				if (!!window.localStorage) {
+		ident: '$.store.drivers.localStorage',
+		available: function() {
+			try {
+				if ( window.localStorage ) {
 					// Safari's "Private" mode throws a QUOTA_EXCEEDED_ERR on setItem
-					window.localStorage.setItem("jQuery Store Availability test", true);
-					window.localStorage.removeItem("jQuery Store Availability test");
+					window.localStorage.setItem( 'localStorageTest', 'localStorageTest' );
+					window.localStorage.removeItem( 'localStorageTest' );
 					return true;
-				};
+				}
 				return false;
-			}
-			catch(e)
-			{
+			} catch(e) {
 				return false;
 			}
 		},
 		init: $.noop,
-		get: function( key )
-		{
+		get: function( key ) {
 			return window.localStorage.getItem( key );
 		},
-		set: function( key, value )
-		{
+		set: function( key, value ) {
 			window.localStorage.setItem( key, value );
 		},
-		del: function( key )
-		{
+		remove: function( key ) {
 			window.localStorage.removeItem( key );
-		},
-		flush: function()
-		{
-			window.localStorage.clear();
 		}
 	},
-	
+
 	// IE6, IE7
 	'userData': {
 		// see http://msdn.microsoft.com/en-us/library/ms531424.aspx
-		ident: "$.store.drivers.userData",
+		ident: '$.store.drivers.userData',
 		element: null,
 		nodeName: 'userdatadriver',
-		scope: 'browser',
 		initialized: false,
-		available: function()
-		{
-			try
-			{
+		available: function() {
+			try {
 				return !!( document.documentElement && document.documentElement.addBehavior );
-			}
-			catch(e)
-			{
+			} catch(e) {
 				return false;
 			}
 		},
-		init: function()
-		{
+		init: function() {
 			// $.store can only utilize one userData store at a time, thus avoid duplicate initialization
-			if( this.initialized )
+			if ( this.initialized ) {
 				return;
-			
-			try
-			{
+			}
+			try {
 				// Create a non-existing element and append it to the root element (html)
 				this.element = document.createElement( this.nodeName );
 				document.documentElement.insertBefore( this.element, document.getElementsByTagName('title')[0] );
 				// Apply userData behavior
-				this.element.addBehavior( "#default#userData" );
+				this.element.addBehavior( '#default#userData' );
 				this.initialized = true;
-			}
-			catch( e )
-			{
-				return false; 
+			} catch( e ) {
+				return false;
 			}
 		},
-		get: function( key )
-		{
+		get: function( key ) {
 			this.element.load( this.nodeName );
 			return this.element.getAttribute( key );
 		},
-		set: function( key, value )
-		{
+		set: function( key, value ) {
 			this.element.setAttribute( key, value );
 			this.element.save( this.nodeName );
 		},
-		del: function( key )
-		{
+		remove: function( key ) {
 			this.element.removeAttribute( key );
 			this.element.save( this.nodeName );
-			
-		},
-		flush: function()
-		{
-			// flush by expiration
-			var attrs = this.element.xmlDocument.firstChild.attributes;
-			for (var i = attrs.length - 1; i >= 0; i--) {
-				this.element.removeAttribute( attrs[i].nodeName );
-			}
-        		this.element.save( this.nodeName );
 		}
 	},
-	
+
 	// most other browsers
-	'windowName': {
-		ident: "$.store.drivers.windowName",
-		scope: 'window',
-		cache: {},
-		encodes: true,
-		available: function()
-		{
+	'cookies': {
+		ident: '$.store.drivers.cookies',
+		available: function() {
 			return true;
 		},
-		init: function()
-		{
-			this.load();
-		},
-		save: function()
-		{
-			window.name = $.store.serializers.json.encode( this.cache );
-		},
-		load: function()
-		{
-			try
-			{
-				this.cache = $.store.serializers.json.decode( window.name + "" );
-				if( typeof this.cache != "object" )
-					this.cache = {};
+		get: function( key ) {
+			var nameEQ = key + '=',
+				ca = document.cookie.split( ';' ),
+				i, c;
+			for ( i = 0; i < ca.length; i++ ) {
+				c = ca[i];
+				while ( c.charAt(0) === ' ' ) {
+					c = c.substring( 1, c.length );
+				}
+				if ( c.indexOf( nameEQ ) === 0 ) {
+					return c.substring( nameEQ.length, c.length );
+				}
 			}
-			catch(e)
-			{
-				this.cache = {};
-				window.name = "{}";
-			}
+			return null;
 		},
-		get: function( key )
-		{
-			return this.cache[ key ];
+		set: function( key, value ) {
+			var date = new Date(),
+				expires;
+			// store cookie for 1 year
+			date.setTime( date.getTime() + ( 365 * 24 * 60 * 60 * 1000 ) );
+			expires = "; expires=" + date.toGMTString();
+			document.cookie = key + '=' + value + expires + '; path=/';
 		},
-		set: function( key, value )
-		{
-			this.cache[ key ] = value;
-			this.save();
-		},
-		del: function( key )
-		{
-			try
-			{
-				delete this.cache[ key ];
-			}
-			catch(e)
-			{
-				this.cache[ key ] = undefined;
-			}
-			
-			this.save();
-		},
-		flush: function()
-		{
-			window.name = "{}";
+		remove: function( key ) {
+			document.cookie = key + '=;expires=Thu, 01 Jan 1970 00:00:01 GMT;';
 		}
 	}
 };
 
-/**********************************************************************************
- * $.store serializers
- **********************************************************************************/
-
-$.store.serializers = {
-	
-	'json': {
-		ident: "$.store.serializers.json",
-		init: function( encoders, decoders )
-		{
-			encoders.push( "json" );
-			decoders.push( "json" );
-		},
-		encode: JSON.stringify,
-		decode: JSON.parse
-	},
-	
-	// TODO: html serializer
-	// 'html' : {},
-	
-	'xml': {
-		ident: "$.store.serializers.xml",
-		init: function( encoders, decoders )
-		{
-			encoders.unshift( "xml" );
-			decoders.push( "xml" );
-		},
-		
-		// wouldn't be necessary if jQuery exposed this function
-		isXML: function( value )
-		{
-			var documentElement = ( value ? value.ownerDocument || value : 0 ).documentElement;
-			return documentElement ? documentElement.nodeName.toLowerCase() !== "html" : false;
-		},
-
-		// encodes a XML node to string (taken from $.jStorage, MIT License)
-		encode: function( value )
-		{
-			if( !value || value._serialized || !this.isXML( value ) )
-				return value;
-
-			var _value = { _serialized: this.ident, value: value };
-			
-			try
-			{
-				// Mozilla, Webkit, Opera
-				_value.value = new XMLSerializer().serializeToString( value );
-				return _value;
-			}
-			catch(E1)
-			{
-				try
-				{
-					// Internet Explorer
-					_value.value = value.xml;
-					return _value;
-				}
-				catch(E2){}
-			}
-			
-			return value;
-		},
-		
-		// decodes a XML node from string (taken from $.jStorage, MIT License)
-		decode: function( value )
-		{
-			if( !value || !value._serialized || value._serialized != this.ident )
-				return value;
-
-			var dom_parser = ( "DOMParser" in window && (new DOMParser()).parseFromString );
-			if( !dom_parser && window.ActiveXObject )
-			{
-				dom_parser = function( _xmlString )
-				{
-					var xml_doc = new ActiveXObject( 'Microsoft.XMLDOM' );
-					xml_doc.async = 'false';
-					xml_doc.loadXML( _xmlString );
-					return xml_doc;
-				}
-			}
-
-			if( !dom_parser )
-			{
-				return undefined;
-			}
-			
-			value.value = dom_parser.call(
-				"DOMParser" in window && (new DOMParser()) || window, 
-				value.value, 
-				'text/xml'
-			);
-			
-			return this.isXML( value.value ) ? value.value : undefined;
-		}
-	}
-};
-
-})(jQuery);
+} ( jQuery ) );
