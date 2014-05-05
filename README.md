@@ -1,16 +1,6 @@
-**Status: unmaintained!**
-
-I no longer use this utility, because all [current browsers](http://caniuse.com/#feat=namevalue-storage) (including IE8+) support the LocalStorage interface.
-
-If you are interested in taking over this utility, contact me so I can transfer the repository to your account.
-
----
-
 # $.store jQuery plugin #
 
-<code>$.store</code> is a simple, yet easily extensible, plugin to persistently store data on the client side of things. It uses <code>window.localStore</code> where available. Older Internet Explorers will use <code>userData</code>. If all fails <code>$.store</code> will save your data to <code>window.name</code>.
-
-*Note*: The <code>windowName</code> will only do JSON serialization. <code>windowName</code> is not persistent in the sense of making it accross a closed browser window. If you need that ability you should check <code>$.storage.driver.scope == "browser"</code>.
+<code>$.store</code> is a simple, yet easily extensible, plugin to persistently store data on the client side of things. It uses <code>window.localStore</code> where available. Older Internet Explorers will use <code>userData</code>. If all else fails <code>$.store</code> will save your data to <code>cookies</code>.
 
 ## Usage ##
 
@@ -25,10 +15,10 @@ $.storage.set( key, value );
 $.storage.get( key );
 
 // deletes a value
-$.storage.del( key );
+$.storage.remove( key );
 
-// delete all values
-$.storage.flush();
+// see which storage method is being used
+$.storage.driverInUse();
 </code></pre>
 
 ## License ##

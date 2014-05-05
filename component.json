@@ -1,13 +1,12 @@
 {
   "name": "jquery-store",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "main": "jquery.store.js",
   "repository": {
     "type": "git",
-    "url": "git://github.com/medialize/jQuery-store.git"
+    "url": "git://github.com/kaldari/jQuery-store.git"
   },
   "dependencies": {
-    "jquery" : "*",
-    "json2" : "*"
+    "jquery" : "*"
   }
 }
