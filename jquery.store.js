@@ -2,7 +2,7 @@
  * jQuery store - Plugin for persistent, cached data storage using localStorage, userData,
  * or cookies
  *
- * Authors: Ryan Kaldari, Rodney Rehm
+ * Authors: Rodney Rehm, Ryan Kaldari
  * Based on original plug-in at http://medialize.github.com/jQuery-store/. Added cookie
  * fall-back and caching. Removed window storage and serialization. Input should be
  * properly serialized before being passed to set().
