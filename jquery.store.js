@@ -163,6 +163,7 @@ $.store.drivers = {
 		available: function() {
 			return true;
 		},
+		init: $.noop,
 		get: function( key ) {
 			var nameEQ = key + '=',
 				ca = document.cookie.split( ';' ),
